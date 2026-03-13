@@ -959,15 +959,11 @@ function renderStrip() {
   var totalW = calcTotalWidth();
   strip.classList.toggle('over-limit', totalW > MAX_WIDTH);
 
-  // Find the largest element to scale against
-  var maxReal = 0;
-  for (var k = 0; k < assembledElements.length; k++) {
-    var dd = getDims(assembledElements[k].compId, assembledElements[k].spec);
-    var biggest = Math.max(dd.w, dd.h);
-    if (biggest > maxReal) maxReal = biggest;
-  }
-  var maxPx = 60;
-  var minPx = 18;
+  // Fixed scale: based on absolute largest possible element (3/8" tubing = 0.375")
+  // so sizes never change when adding/removing elements
+  var LARGEST_POSSIBLE = 0.375; // 3/8" tubing OD
+  var maxPx = 64;
+  var minPx = 12;
 
   var currentGroupId = null;
   var groupWrapper = null;
@@ -976,7 +972,7 @@ function renderStrip() {
     var el = assembledElements[i];
     var dims = getDims(el.compId, el.spec);
     var realSize = Math.max(dims.w, dims.h);
-    var px = Math.max(minPx, Math.round((realSize / maxReal) * maxPx));
+    var px = Math.max(minPx, Math.round((realSize / LARGEST_POSSIBLE) * maxPx));
 
     // Start a new group wrapper if this element is part of a module group
     if (el.groupId && el.groupId !== currentGroupId) {
