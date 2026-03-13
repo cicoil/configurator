@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flat Cable Configurator</title>
+<style>
+  :root {
+    --primary: #2c3e50;
+    --accent: #e74c3c;
+    --blue: #3498db;
+    --green: #27ae60;
+    --orange: #e67e22;
+    --gray: #95a5a6;
+    --light: #ecf0f1;
+    --dark: #1a1a2e;
+    --max-width: 3.75;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f5f6fa;
+    color: #333;
+  }
+
+  header {
+    background: var(--dark);
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  header h1 { font-size: 22px; font-weight: 600; }
+  header .subtitle { font-size: 13px; color: #aaa; margin-top: 2px; }
+
+  .stats {
+    text-align: right;
+    font-size: 13px;
+    color: #ccc;
+  }
+  .stats .warn { color: var(--accent); font-weight: 600; }
+  .stats .ok { color: var(--green); }
+
+  /* ── Assembly Strip ── */
+  #assembly-strip {
+    background: #fffbe6;
+    border: 2px solid #f0c040;
+    border-radius: 8px;
+    margin: 16px 24px;
+    padding: 12px 16px;
+    min-height: 90px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    position: relative;
+  }
+
+  #assembly-strip.over-limit {
+    border-color: var(--accent);
+    background: #fff0f0;
+  }
+
+  #assembly-strip .placeholder {
+    color: #999;
+    font-size: 14px;
+    width: 100%;
+    text-align: center;
+  }
+
+  .strip-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: grab;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .strip-item:active { cursor: grabbing; }
+
+  .strip-item .remove-btn {
+    position: absolute;
+    top: -6px;
+    right: -4px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    z-index: 2;
+  }
+
+  .strip-item .strip-label {
+    font-size: 9px;
+    color: #666;
+    margin-top: 2px;
+    text-align: center;
+    max-width: 60px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dragging { opacity: 0.4; }
+  .drag-over-left { border-left: 3px solid var(--blue); }
+  .drag-over-right { border-right: 3px solid var(--blue); }
+
+  .strip-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    background: rgba(52,152,219,0.08);
+    border: 1.5px dashed rgba(52,152,219,0.4);
+    border-radius: 8px;
+    padding: 4px 6px 4px;
+    flex-shrink: 0;
+  }
+
+  .strip-group-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+  }
+
+  .strip-group-items {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+  }
+
+  .strip-group .remove-btn.group-remove {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    z-index: 3;
+  }
+
+  /* ── Width Bar ── */
+  .width-bar-container {
+    margin: 0 24px 12px;
+    background: white;
+    border-radius: 8px;
+    padding: 10px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  .width-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 4px;
+    color: #666;
+  }
+
+  .width-bar-track {
+    height: 20px;
+    background: #eee;
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .width-bar-fill {
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.3s, background 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .width-bar-fill.ok { background: linear-gradient(90deg, #27ae60, #2ecc71); }
+  .width-bar-fill.warn { background: linear-gradient(90deg, #e67e22, #f39c12); }
+  .width-bar-fill.over { background: linear-gradient(90deg, #c0392b, #e74c3c); }
+
+  /* ── Category Panels ── */
+  .panels {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    padding: 0 24px 16px;
+  }
+
+  .panel {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .panel-header {
+    padding: 10px 14px;
+    font-weight: 600;
+    font-size: 14px;
+    color: white;
+  }
+
+  .panel-header.power { background: #34495e; }
+  .panel-header.video { background: var(--blue); }
+  .panel-header.tubing { background: var(--gray); }
+  .panel-header.modules { background: var(--dark); }
+
+  .component-card {
+    padding: 12px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .component-card:last-child { border-bottom: none; }
+
+  .card-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .card-top .card-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .btn-row label {
+    font-size: 10px;
+    color: #888;
+    width: 100%;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .spec-btn {
+    min-width: 36px;
+    height: 28px;
+    border: 2px solid #ccc;
+    border-radius: 14px;
+    background: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #555;
+    padding: 0 8px;
+  }
+
+  .spec-btn:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: #eaf4fd;
+  }
+
+  .spec-btn:active, .spec-btn.flash {
+    background: var(--blue);
+    color: white;
+    border-color: var(--blue);
+    transform: scale(0.95);
+  }
+
+  .module-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 10px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    transition: all 0.15s;
+    text-align: left;
+  }
+
+  .module-btn:hover {
+    border-color: var(--blue);
+    background: #eaf4fd;
+  }
+
+  .module-btn .plus {
+    background: var(--blue);
+    color: white;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .module-contents {
+    font-size: 10px;
+    color: #888;
+    font-weight: 400;
+    margin-top: 2px;
+  }
+
+  /* ── Bottom Section ── */
+  .bottom-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 0 24px 24px;
+  }
+
+  .selected-list {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .selected-list h3 {
+    font-size: 15px;
+    margin-bottom: 8px;
+    color: var(--primary);
+  }
+
+  .selected-list .hint {
+    font-size: 11px;
+    color: #999;
+    margin-bottom: 10px;
+  }
+
+  .element-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+  }
+
+  .element-row .idx {
+    color: #aaa;
+    font-size: 11px;
+    width: 20px;
+    flex-shrink: 0;
+  }
+
+  .element-row .dims {
+    margin-left: auto;
+    font-size: 11px;
+    color: #888;
+    flex-shrink: 0;
+  }
+
+  .cable-preview {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .cable-preview h3 {
+    font-size: 15px;
+    margin-bottom: 12px;
+    color: var(--primary);
+    align-self: flex-start;
+  }
+
+  #cable-cross-section {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .clear-btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 12px;
+    font-weight: 600;
+  }
+
+  .clear-btn:hover { opacity: 0.85; }
+
+  .cross-section-svg { filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.15)); }
+
+  @media (max-width: 1000px) {
+    .panels { grid-template-columns: repeat(2, 1fr); }
+    .bottom-section { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Flat Cable Configurator</h1>
+    <div class="subtitle">Design your custom flat cable assembly</div>
+  </div>
+  <div class="stats">
+    <div>Elements: <strong id="el-count">0</strong> / 30 variations available</div>
+    <div id="dim-display">Width: 0.000" x Height: 0.000"</div>
+    <div id="width-warn"></div>
+  </div>
+</header>
+
+<div id="assembly-strip">
+  <div class="placeholder">Click gauge/spec buttons below to add elements. Drag to reorder.</div>
+</div>
+
+<div class="width-bar-container">
+  <div class="width-bar-label">
+    <span>Cable Width</span>
+    <span id="bar-text">0.000" / 3.750" max</span>
+  </div>
+  <div class="width-bar-track">
+    <div class="width-bar-fill ok" id="width-bar" style="width:0%"></div>
+  </div>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-header power">Power / Signal</div>
+    <div id="power-cards"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header video">Video</div>
+    <div id="video-cards"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header tubing">Tubing</div>
+    <div id="tubing-cards"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header modules">Modules</div>
+    <div id="module-cards"></div>
+  </div>
+</div>
+
+<div class="bottom-section">
+  <div class="selected-list">
+    <h3>Selected Elements</h3>
+    <div class="hint">Elements listed left-to-right matching the assembly strip above.</div>
+    <div id="element-list"></div>
+  </div>
+  <div class="cable-preview">
+    <h3>Cable Cross-Section Preview</h3>
+    <div id="cable-cross-section"></div>
+    <button class="clear-btn" id="clear-btn">Clear All</button>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// DIMENSION TABLE — real Cicoil catalog data + derived values
+// Width = element contribution to total flat cable width
+// Height = element contribution to cable thickness
+// ══════════════════════════════════════════════════════════════
+const DIMS = {
+  'bare-copper': {
+    12: { w: 0.170, h: 0.240 },
+    14: { w: 0.140, h: 0.190 },
+    16: { w: 0.110, h: 0.150 },
+    18: { w: 0.095, h: 0.140 },
+    20: { w: 0.080, h: 0.120 },
+    22: { w: 0.068, h: 0.110 },
+    24: { w: 0.060, h: 0.100 },
+    26: { w: 0.055, h: 0.090 }
+  },
+  'single-shielded': {
+    16: { w: 0.143, h: 0.170 },
+    18: { w: 0.130, h: 0.160 },
+    20: { w: 0.113, h: 0.140 },
+    22: { w: 0.103, h: 0.130 }
+  },
+  'tp-shielded': {
+    18: { w: 0.210, h: 0.210 },
+    20: { w: 0.180, h: 0.180 },
+    22: { w: 0.150, h: 0.150 },
+    24: { w: 0.140, h: 0.140 },
+    26: { w: 0.130, h: 0.130 },
+    28: { w: 0.120, h: 0.120 }
+  },
+  'five-tp-shielded': {
+    26: { w: 0.240, h: 0.240 },
+    28: { w: 0.210, h: 0.210 }
+  },
+  'twinax-dual': {
+    28: { w: 0.150, h: 0.150 }
+  },
+  'twinax-single': {
+    28: { w: 0.130, h: 0.130 }
+  },
+  'coax-30': {
+    50: { w: 0.126, h: 0.120 },
+    75: { w: 0.183, h: 0.180 }
+  },
+  'poly-tubing': {
+    '3/8': { w: 0.375, h: 0.375 },
+    '1/4': { w: 0.250, h: 0.250 },
+    '5/32': { w: 0.156, h: 0.156 }
+  },
+  'teflon-tubing': {
+    '3/8': { w: 0.375, h: 0.375 },
+    '1/4': { w: 0.250, h: 0.250 },
+    '5/32': { w: 0.156, h: 0.156 }
+  }
+};
+
+const MAX_WIDTH = 3.750;
+// Silicone encapsulation adds margin: ~0.030" each side width, ~0.015" top/bottom
+const ENCAP_W = 0.060;
+const ENCAP_H = 0.030;
+
+// ══════════════════════════════════════════════════
+// COMPONENT DEFINITIONS
+// ══════════════════════════════════════════════════
+const COMPONENTS = {
+  power: [
+    {
+      id: 'five-tp-shielded',
+      name: '5 Twisted Pairs, Shielded',
+      specLabel: 'GAUGE (AWG)',
+      specs: [26, 28],
+      color: '#8e8e8e',
+      type: 'five-tp',
+      labelFn: function(s) { return s + ' AWG, 5 Twisted Pairs, Shielded'; }
+    },
+    {
+      id: 'bare-copper',
+      name: 'Bare Tinned Copper',
+      specLabel: 'GAUGE (AWG)',
+      specs: [12, 14, 16, 18, 20, 22, 24, 26],
+      color: '#bdc3c7',
+      type: 'bare',
+      labelFn: function(s) { return s + ' AWG, Bare Tinned Copper'; }
+    },
+    {
+      id: 'single-shielded',
+      name: 'Single, Shielded',
+      specLabel: 'GAUGE (AWG)',
+      specs: [16, 18, 20, 22],
+      color: '#8B5E3C',
+      type: 'single-shielded',
+      labelFn: function(s) { return s + ' AWG, Single, Shielded'; }
+    },
+    {
+      id: 'tp-shielded',
+      name: 'Twisted Pair, Shielded',
+      specLabel: 'GAUGE (AWG)',
+      specs: [18, 20, 22, 24, 26, 28],
+      color: '#c0392b',
+      type: 'twisted-pair',
+      labelFn: function(s) { return s + ' AWG, Twisted Pair, Shielded'; }
+    }
+  ],
+  video: [
+    {
+      id: 'twinax-dual',
+      name: '100 Ohm Twinax, Dual Shielded w/ Drain',
+      specLabel: 'GAUGE (AWG)',
+      specs: [28],
+      color: '#2980b9',
+      type: 'twinax',
+      labelFn: function(s) { return s + ' AWG, 100 Ohm Twinax, Dual Shielded'; }
+    },
+    {
+      id: 'twinax-single',
+      name: '100 Ohm Twinax, Single Shielded',
+      specLabel: 'GAUGE (AWG)',
+      specs: [28],
+      color: '#3498db',
+      type: 'twinax',
+      labelFn: function(s) { return s + ' AWG, 100 Ohm Twinax, Single Shielded'; }
+    },
+    {
+      id: 'coax-30',
+      name: 'Coax, 30 AWG',
+      specLabel: 'OHMS',
+      specs: [50, 75],
+      color: '#ecf0f1',
+      type: 'coax',
+      labelFn: function(s) { return '30 AWG Coax, ' + s + ' Ohm'; }
+    }
+  ],
+  tubing: [
+    {
+      id: 'poly-tubing',
+      name: 'Polyurethane Tubing',
+      specLabel: 'OUTER DIAMETER',
+      specs: ['3/8', '1/4', '5/32'],
+      color: 'rgba(200,220,240,0.6)',
+      type: 'tube',
+      labelFn: function(s) { return 'Polyurethane Tubing, ' + s + '" OD'; }
+    },
+    {
+      id: 'teflon-tubing',
+      name: 'Teflon\u00AE Tubing',
+      specLabel: 'OUTER DIAMETER',
+      specs: ['3/8', '1/4', '5/32'],
+      color: 'rgba(230,240,250,0.7)',
+      type: 'tube-teflon',
+      labelFn: function(s) { return 'Teflon Tubing, ' + s + '" OD'; }
+    }
+  ]
+};
+
+const MODULES = [
+  {
+    id: 'usb3',
+    name: 'USB 3.0 Group',
+    contents: '2x 24 AWG Single Shielded + 3x 100 Ohm Cat 6a',
+    elements: [
+      { compId: 'single-shielded', spec: 22, cat: 'power' },
+      { compId: 'single-shielded', spec: 22, cat: 'power' },
+      { compId: 'twinax-single', spec: 28, cat: 'video' },
+      { compId: 'twinax-single', spec: 28, cat: 'video' },
+      { compId: 'twinax-single', spec: 28, cat: 'video' }
+    ]
+  },
+  {
+    id: 'cat6a',
+    name: 'Cat 6a Group',
+    contents: '4x 100 Ohm Cat 6a',
+    elements: [
+      { compId: 'twinax-single', spec: 28, cat: 'video' },
+      { compId: 'twinax-single', spec: 28, cat: 'video' },
+      { compId: 'twinax-single', spec: 28, cat: 'video' },
+      { compId: 'twinax-single', spec: 28, cat: 'video' }
+    ]
+  },
+  {
+    id: 'camera-link',
+    name: 'Camera Link Signal Group',
+    contents: '11x 100 Ohm Camera Link, Shielded',
+    elements: [
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' },
+      { compId: 'twinax-dual', spec: 28, cat: 'video' }
+    ]
+  },
+  {
+    id: 'motion-plus',
+    name: 'Motion Series Plus Group',
+    contents: '3x 22 AWG TP Shielded + 2x 28 AWG 5TP Shielded',
+    elements: [
+      { compId: 'tp-shielded', spec: 22, cat: 'power' },
+      { compId: 'tp-shielded', spec: 22, cat: 'power' },
+      { compId: 'tp-shielded', spec: 22, cat: 'power' },
+      { compId: 'five-tp-shielded', spec: 28, cat: 'power' },
+      { compId: 'five-tp-shielded', spec: 28, cat: 'power' }
+    ]
+  }
+];
+
+// ══════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════
+var assembledElements = [];
+var uidCounter = 0;
+var groupCounter = 0;
+var dragSrcUid = null;
+
+// ══════════════════════════════════════════════════
+// DIMENSION LOOKUP
+// ══════════════════════════════════════════════════
+function getDims(compId, spec) {
+  var table = DIMS[compId];
+  if (!table) return { w: 0.100, h: 0.100 };
+  var d = table[spec];
+  if (!d) return { w: 0.100, h: 0.100 };
+  return d;
+}
+
+function findComponent(compId, category) {
+  var cats = category ? [category] : ['power','video','tubing'];
+  for (var i = 0; i < cats.length; i++) {
+    var list = COMPONENTS[cats[i]] || [];
+    for (var j = 0; j < list.length; j++) {
+      if (list[j].id === compId) return list[j];
+    }
+  }
+  return null;
+}
+
+// ══════════════════════════════════════════════════
+// SVG CROSS-SECTION GENERATORS
+// ══════════════════════════════════════════════════
+function svgCross(type, color, size) {
+  var r = size / 2;
+  var cx = r, cy = r;
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" class="cross-section-svg">';
+
+  switch (type) {
+    case 'bare':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="#bdc3c7" stroke="#999" stroke-width="1"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.7)+'" fill="#c9a84c"/>';
+      break;
+
+    case 'single-shielded':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="'+color+'" stroke="#6d4025" stroke-width="1.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.55)+'" fill="#aaa" stroke="#888" stroke-width="0.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.35)+'" fill="#c9a84c"/>';
+      break;
+
+    case 'twisted-pair':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="'+color+'" stroke="#8b1a1a" stroke-width="1.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.6)+'" fill="#ccc" stroke="#999" stroke-width="0.5"/>';
+      s += '<circle cx="'+(cx-r*0.2)+'" cy="'+cy+'" r="'+(r*0.2)+'" fill="#c9a84c"/>';
+      s += '<circle cx="'+(cx+r*0.2)+'" cy="'+cy+'" r="'+(r*0.2)+'" fill="#c9a84c"/>';
+      break;
+
+    case 'five-tp':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="#999" stroke="#777" stroke-width="1.5"/>';
+      var colors5 = ['#e74c3c','#27ae60','#3498db','#e67e22','#8e44ad'];
+      for (var i = 0; i < 5; i++) {
+        var a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+        var ix = cx + Math.cos(a) * r * 0.4;
+        var iy = cy + Math.sin(a) * r * 0.4;
+        s += '<circle cx="'+ix.toFixed(1)+'" cy="'+iy.toFixed(1)+'" r="'+(r*0.18).toFixed(1)+'" fill="'+colors5[i]+'"/>';
+      }
+      break;
+
+    case 'twinax':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="'+color+'" stroke="#1a5276" stroke-width="1.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.6)+'" fill="#ddd" stroke="#bbb" stroke-width="0.5"/>';
+      s += '<circle cx="'+(cx-r*0.18)+'" cy="'+cy+'" r="'+(r*0.18)+'" fill="#c9a84c"/>';
+      s += '<circle cx="'+(cx+r*0.18)+'" cy="'+cy+'" r="'+(r*0.18)+'" fill="#c9a84c"/>';
+      break;
+
+    case 'coax':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="#eee" stroke="#ccc" stroke-width="1.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.5)+'" fill="#ddd" stroke="#bbb" stroke-width="0.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.25)+'" fill="#c9a84c"/>';
+      break;
+
+    case 'tube':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="rgba(180,210,240,0.4)" stroke="#aac" stroke-width="1.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.65)+'" fill="white" stroke="#ccd" stroke-width="0.5"/>';
+      break;
+
+    case 'tube-teflon':
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="rgba(220,235,250,0.5)" stroke="#bbd" stroke-width="1.5"/>';
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*0.65)+'" fill="white" stroke="#dde" stroke-width="0.5"/>';
+      s += '<text x="'+cx+'" y="'+(cy+2)+'" text-anchor="middle" font-size="'+(size*0.15)+'" fill="#aab">PTFE</text>';
+      break;
+
+    default:
+      s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-1)+'" fill="#ddd" stroke="#999" stroke-width="1"/>';
+  }
+
+  s += '</svg>';
+  return s;
+}
+
+// ══════════════════════════════════════════════════
+// ADD / REMOVE ELEMENTS
+// ══════════════════════════════════════════════════
+function addElement(compId, spec, category, groupId, groupName, skipRender) {
+  var comp = findComponent(compId, category);
+  if (!comp) return false;
+  // Check if adding this element would exceed max width
+  var newDims = getDims(compId, spec);
+  var currentW = calcTotalWidth();
+  if (assembledElements.length === 0) currentW = ENCAP_W;
+  if (currentW + newDims.w > MAX_WIDTH) {
+    if (!skipRender) flashWarning();
+    return false;
+  }
+  assembledElements.push({
+    uid: ++uidCounter,
+    compId: compId,
+    spec: spec,
+    category: category,
+    component: comp,
+    groupId: groupId || null,
+    groupName: groupName || null
+  });
+  if (!skipRender) render();
+  return true;
+}
+
+function flashWarning() {
+  var strip = document.getElementById('assembly-strip');
+  var warn = document.getElementById('width-warn');
+  strip.classList.add('over-limit');
+  warn.innerHTML = '<span class="warn">Cannot add — would exceed ' + MAX_WIDTH.toFixed(3) + '" max width!</span>';
+  setTimeout(function() {
+    strip.classList.remove('over-limit');
+    if (calcTotalWidth() <= MAX_WIDTH) {
+      var remaining = MAX_WIDTH - calcTotalWidth();
+      warn.innerHTML = '<span class="ok">Remaining: ' + remaining.toFixed(3) + '"</span>';
+    }
+  }, 1500);
+}
+
+function removeElement(uid) {
+  // If this element belongs to a group, remove the entire group
+  var target = null;
+  for (var i = 0; i < assembledElements.length; i++) {
+    if (assembledElements[i].uid === uid) { target = assembledElements[i]; break; }
+  }
+  if (target && target.groupId) {
+    var gid = target.groupId;
+    assembledElements = assembledElements.filter(function(e) { return e.groupId !== gid; });
+  } else {
+    assembledElements = assembledElements.filter(function(e) { return e.uid !== uid; });
+  }
+  render();
+}
+
+function clearAll() {
+  assembledElements = [];
+  render();
+}
+
+function addModule(moduleId) {
+  var mod = null;
+  for (var i = 0; i < MODULES.length; i++) {
+    if (MODULES[i].id === moduleId) { mod = MODULES[i]; break; }
+  }
+  if (!mod) return;
+  // Check total width of all module elements first
+  var moduleWidth = 0;
+  for (var k = 0; k < mod.elements.length; k++) {
+    moduleWidth += getDims(mod.elements[k].compId, mod.elements[k].spec).w;
+  }
+  var currentW = assembledElements.length === 0 ? ENCAP_W : calcTotalWidth();
+  if (currentW + moduleWidth > MAX_WIDTH) {
+    flashWarning();
+    return;
+  }
+  var gid = ++groupCounter;
+  for (var j = 0; j < mod.elements.length; j++) {
+    var el = mod.elements[j];
+    addElement(el.compId, el.spec, el.cat, gid, mod.name, true);
+  }
+  render();
+}
+
+// ══════════════════════════════════════════════════
+// DRAG & DROP REORDER
+// ══════════════════════════════════════════════════
+function setupDrag(node, uid) {
+  node.setAttribute('draggable', 'true');
+  node.addEventListener('dragstart', function(e) {
+    dragSrcUid = uid;
+    e.dataTransfer.effectAllowed = 'move';
+    node.classList.add('dragging');
+  });
+  node.addEventListener('dragend', function() {
+    node.classList.remove('dragging');
+    var overs = document.querySelectorAll('.drag-over-left,.drag-over-right');
+    for (var i = 0; i < overs.length; i++) {
+      overs[i].classList.remove('drag-over-left','drag-over-right');
+    }
+    dragSrcUid = null;
+  });
+  node.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var rect = node.getBoundingClientRect();
+    var mid = rect.left + rect.width / 2;
+    node.classList.toggle('drag-over-left', e.clientX < mid);
+    node.classList.toggle('drag-over-right', e.clientX >= mid);
+  });
+  node.addEventListener('dragleave', function() {
+    node.classList.remove('drag-over-left','drag-over-right');
+  });
+  node.addEventListener('drop', function(e) {
+    e.preventDefault();
+    node.classList.remove('drag-over-left','drag-over-right');
+    if (dragSrcUid === null || dragSrcUid === uid) return;
+    var srcIdx = -1, tgtIdx = -1;
+    for (var i = 0; i < assembledElements.length; i++) {
+      if (assembledElements[i].uid === dragSrcUid) srcIdx = i;
+      if (assembledElements[i].uid === uid) tgtIdx = i;
+    }
+    if (srcIdx === -1 || tgtIdx === -1) return;
+    var rect = node.getBoundingClientRect();
+    var insertAfter = e.clientX >= rect.left + rect.width / 2;
+    var moved = assembledElements.splice(srcIdx, 1)[0];
+    tgtIdx = -1;
+    for (var j = 0; j < assembledElements.length; j++) {
+      if (assembledElements[j].uid === uid) { tgtIdx = j; break; }
+    }
+    var insertIdx = insertAfter ? tgtIdx + 1 : tgtIdx;
+    assembledElements.splice(insertIdx, 0, moved);
+    render();
+  });
+}
+
+// ══════════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════════
+function render() {
+  renderStrip();
+  renderElementList();
+  renderCablePreview();
+  updateStats();
+}
+
+function renderStrip() {
+  var strip = document.getElementById('assembly-strip');
+  strip.innerHTML = '';
+
+  if (assembledElements.length === 0) {
+    strip.innerHTML = '<div class="placeholder">Click gauge/spec buttons below to add elements. Drag to reorder.</div>';
+    strip.classList.remove('over-limit');
+    return;
+  }
+
+  var totalW = calcTotalWidth();
+  strip.classList.toggle('over-limit', totalW > MAX_WIDTH);
+
+  // Find the largest element to scale against
+  var maxReal = 0;
+  for (var k = 0; k < assembledElements.length; k++) {
+    var dd = getDims(assembledElements[k].compId, assembledElements[k].spec);
+    var biggest = Math.max(dd.w, dd.h);
+    if (biggest > maxReal) maxReal = biggest;
+  }
+  var maxPx = 60;
+  var minPx = 18;
+
+  var currentGroupId = null;
+  var groupWrapper = null;
+
+  for (var i = 0; i < assembledElements.length; i++) {
+    var el = assembledElements[i];
+    var dims = getDims(el.compId, el.spec);
+    var realSize = Math.max(dims.w, dims.h);
+    var px = Math.max(minPx, Math.round((realSize / maxReal) * maxPx));
+
+    // Start a new group wrapper if this element is part of a module group
+    if (el.groupId && el.groupId !== currentGroupId) {
+      groupWrapper = document.createElement('div');
+      groupWrapper.className = 'strip-group';
+
+      // Single remove button for the whole group
+      var groupRemove = document.createElement('button');
+      groupRemove.className = 'remove-btn group-remove';
+      groupRemove.innerHTML = '&times;';
+      groupRemove.title = 'Remove entire ' + (el.groupName || 'group');
+      groupRemove.addEventListener('click', (function(uid) {
+        return function() { removeElement(uid); };
+      })(el.uid));
+      groupWrapper.appendChild(groupRemove);
+
+      // Group label at top
+      var groupLabel = document.createElement('div');
+      groupLabel.className = 'strip-group-label';
+      groupLabel.textContent = el.groupName || 'Module';
+      groupWrapper.appendChild(groupLabel);
+
+      var groupItems = document.createElement('div');
+      groupItems.className = 'strip-group-items';
+      groupWrapper.appendChild(groupItems);
+
+      strip.appendChild(groupWrapper);
+      currentGroupId = el.groupId;
+    } else if (!el.groupId) {
+      currentGroupId = null;
+      groupWrapper = null;
+    }
+
+    var div = document.createElement('div');
+    div.className = 'strip-item';
+
+    // Only show individual remove for non-group elements
+    if (!el.groupId) {
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-btn';
+      removeBtn.innerHTML = '&times;';
+      removeBtn.addEventListener('click', (function(uid) {
+        return function() { removeElement(uid); };
+      })(el.uid));
+      div.appendChild(removeBtn);
+    }
+
+    var svgContainer = document.createElement('div');
+    svgContainer.innerHTML = svgCross(el.component.type, el.component.color, px);
+
+    var label = document.createElement('div');
+    label.className = 'strip-label';
+    var specLabel = el.component.specLabel.indexOf('AWG') >= 0 ? el.spec + 'AWG' : el.spec + '';
+    label.textContent = specLabel;
+    label.title = el.component.labelFn(el.spec);
+
+    div.appendChild(svgContainer.firstChild);
+    div.appendChild(label);
+
+    if (el.groupId && groupWrapper) {
+      groupWrapper.querySelector('.strip-group-items').appendChild(div);
+    } else {
+      strip.appendChild(div);
+    }
+
+    setupDrag(div, el.uid);
+  }
+}
+
+function renderElementList() {
+  var list = document.getElementById('element-list');
+  if (assembledElements.length === 0) {
+    list.innerHTML = '<div style="color:#aaa; font-size:13px; padding:10px 0;">No elements selected.</div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < assembledElements.length; i++) {
+    var el = assembledElements[i];
+    var d = getDims(el.compId, el.spec);
+    html += '<div class="element-row">';
+    html += '<span class="idx">' + (i + 1) + '.</span>';
+    html += svgCross(el.component.type, el.component.color, 24);
+    html += '<span>' + el.component.labelFn(el.spec) + '</span>';
+    html += '<span class="dims">' + d.w.toFixed(3) + '" x ' + d.h.toFixed(3) + '"</span>';
+    html += '</div>';
+  }
+  list.innerHTML = html;
+}
+
+function renderCablePreview() {
+  var container = document.getElementById('cable-cross-section');
+  if (assembledElements.length === 0) {
+    container.innerHTML = '<div style="color:#aaa; font-size:14px;">Add elements to see preview</div>';
+    return;
+  }
+
+  // Scale: 1 inch = 200 pixels
+  var SCALE = 200;
+  // Flexx-Sil jacket: ~0.015" outer skin, fills all gaps between elements
+  var jacketSkin = 0.015 * SCALE;
+
+  // Build circle layout — NO GAP, elements touching edge to edge
+  var circles = [];
+  var xCursor = jacketSkin + 2;
+  for (var i = 0; i < assembledElements.length; i++) {
+    var el = assembledElements[i];
+    var d = getDims(el.compId, el.spec);
+    var radius = (Math.max(d.w, d.h) / 2) * SCALE;
+    circles.push({ cx: xCursor + radius, r: radius, el: el });
+    xCursor += radius * 2; // no gap — elements sit edge to edge
+  }
+  xCursor += jacketSkin + 2;
+
+  var maxR = 0;
+  for (var j = 0; j < circles.length; j++) {
+    if (circles[j].r > maxR) maxR = circles[j].r;
+  }
+
+  var totalH = (maxR + jacketSkin) * 2 + 6;
+  var cy = totalH / 2;
+  var totalW = xCursor;
+
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.ceil(totalW) + '" height="' + Math.ceil(totalH) + '" style="max-width:100%;">';
+
+  // Defs
+  svg += '<defs>';
+  // Sheen gradient for glassy silicone look
+  svg += '<linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">';
+  svg += '<stop offset="0%" stop-color="rgba(255,255,255,0.4)"/>';
+  svg += '<stop offset="35%" stop-color="rgba(255,255,255,0.1)"/>';
+  svg += '<stop offset="100%" stop-color="rgba(255,255,255,0)"/>';
+  svg += '</linearGradient>';
+  // Clip path to limit sheen to top half
+  svg += '<clipPath id="top-half"><rect x="0" y="0" width="' + totalW + '" height="' + cy + '"/></clipPath>';
+  svg += '</defs>';
+
+  // ── Layer 1: Solid Flexx-Sil silicone body ──
+  // The silicone fills EVERYTHING: outer shell + all gaps between circles
+  // Draw outer contour path, then cut out each circle
+  var outerPath = buildOuterContour(circles, cy, jacketSkin);
+  svg += '<path d="' + outerPath + '" fill="rgba(195,218,240,0.45)" stroke="rgba(140,175,210,0.7)" stroke-width="1.2"/>';
+
+  // Cut out each cable element (the silicone doesn't cover the cables themselves)
+  for (var c2 = 0; c2 < circles.length; c2++) {
+    svg += '<circle cx="' + circles[c2].cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + circles[c2].r.toFixed(1) + '" fill="#f5f6fa"/>';
+  }
+
+  // Sheen highlight on upper portion of silicone
+  svg += '<path d="' + outerPath + '" fill="url(#sheen)" clip-path="url(#top-half)"/>';
+
+  // ── Layer 2: Cable cross-sections ──
+  for (var k = 0; k < circles.length; k++) {
+    var c = circles[k];
+    var size = c.r * 2;
+    svg += '<foreignObject x="' + (c.cx - c.r).toFixed(1) + '" y="' + (cy - c.r).toFixed(1) + '" width="' + size.toFixed(1) + '" height="' + size.toFixed(1) + '">';
+    svg += svgCross(c.el.component.type, c.el.component.color, Math.round(size));
+    svg += '</foreignObject>';
+  }
+
+  // ── Layer 3: Outer contour stroke on top of everything for definition ──
+  svg += '<path d="' + outerPath + '" fill="none" stroke="rgba(120,160,200,0.5)" stroke-width="0.8"/>';
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
+// Builds the outer contour of the Flexx-Sil jacket
+// Traces over tops, fills valleys between touching circles, wraps ends
+function buildOuterContour(circles, cy, skin) {
+  if (circles.length === 0) return '';
+
+  var parts = [];
+
+  // === TOP CONTOUR: left to right ===
+  var first = circles[0];
+  var rFirst = first.r + skin;
+  // Start at left midpoint of first circle
+  parts.push('M ' + (first.cx - rFirst).toFixed(1) + ',' + cy.toFixed(1));
+  // Arc over top of first circle
+  parts.push('A ' + rFirst.toFixed(1) + ',' + rFirst.toFixed(1) + ' 0 0,1 ' + (first.cx + rFirst).toFixed(1) + ',' + cy.toFixed(1));
+
+  for (var i = 1; i < circles.length; i++) {
+    var prev = circles[i - 1];
+    var curr = circles[i];
+    var rPrev = prev.r + skin;
+    var rCurr = curr.r + skin;
+
+    // Right edge of prev jacket, left edge of curr jacket
+    var rightP = prev.cx + rPrev;
+    var leftC = curr.cx - rCurr;
+
+    if (leftC > rightP + 0.5) {
+      // Small gap exists — fill with smooth valley curve
+      var midX = (rightP + leftC) / 2;
+      // Valley goes up to center line (silicone fills the gap fully)
+      parts.push('C ' + rightP.toFixed(1) + ',' + (cy - 1).toFixed(1) + ' ' +
+                  midX.toFixed(1) + ',' + cy.toFixed(1) + ' ' +
+                  midX.toFixed(1) + ',' + cy.toFixed(1));
+      parts.push('C ' + midX.toFixed(1) + ',' + cy.toFixed(1) + ' ' +
+                  leftC.toFixed(1) + ',' + (cy - 1).toFixed(1) + ' ' +
+                  leftC.toFixed(1) + ',' + cy.toFixed(1));
+    } else if (leftC < rightP - 0.5) {
+      // Circles overlap with jacket — find tangent transition
+      // Compute where the two jacket circles intersect (top)
+      var dist = curr.cx - prev.cx;
+      if (dist > 0) {
+        var a = (rPrev * rPrev - rCurr * rCurr + dist * dist) / (2 * dist);
+        var hSq = rPrev * rPrev - a * a;
+        if (hSq > 0) {
+          var h = Math.sqrt(hSq);
+          var ix = prev.cx + a;
+          var iy = cy - h; // top intersection
+          parts.push('A ' + rPrev.toFixed(1) + ',' + rPrev.toFixed(1) + ' 0 0,1 ' + ix.toFixed(1) + ',' + iy.toFixed(1));
+          parts.push('A ' + rCurr.toFixed(1) + ',' + rCurr.toFixed(1) + ' 0 0,1 ' + (curr.cx + rCurr).toFixed(1) + ',' + cy.toFixed(1));
+          continue;
+        }
+      }
+      // Fallback: straight line
+      parts.push('L ' + leftC.toFixed(1) + ',' + cy.toFixed(1));
+    } else {
+      // Edges meet — just connect
+      parts.push('L ' + leftC.toFixed(1) + ',' + cy.toFixed(1));
+    }
+
+    // Arc over top of current circle
+    parts.push('A ' + rCurr.toFixed(1) + ',' + rCurr.toFixed(1) + ' 0 0,1 ' + (curr.cx + rCurr).toFixed(1) + ',' + cy.toFixed(1));
+  }
+
+  // === BOTTOM CONTOUR: right to left ===
+  var last = circles[circles.length - 1];
+  var rLast = last.r + skin;
+  // We're at right midpoint of last circle, arc under it
+  parts.push('A ' + rLast.toFixed(1) + ',' + rLast.toFixed(1) + ' 0 0,1 ' + (last.cx - rLast).toFixed(1) + ',' + cy.toFixed(1));
+
+  for (var j = circles.length - 2; j >= 0; j--) {
+    var nextC = circles[j + 1];
+    var curC = circles[j];
+    var rNext = nextC.r + skin;
+    var rCur = curC.r + skin;
+
+    var leftN = nextC.cx - rNext;
+    var rightCur = curC.cx + rCur;
+
+    if (rightCur < leftN - 0.5) {
+      // Gap — fill valley
+      var midXb = (rightCur + leftN) / 2;
+      parts.push('C ' + leftN.toFixed(1) + ',' + (cy + 1).toFixed(1) + ' ' +
+                  midXb.toFixed(1) + ',' + cy.toFixed(1) + ' ' +
+                  midXb.toFixed(1) + ',' + cy.toFixed(1));
+      parts.push('C ' + midXb.toFixed(1) + ',' + cy.toFixed(1) + ' ' +
+                  rightCur.toFixed(1) + ',' + (cy + 1).toFixed(1) + ' ' +
+                  rightCur.toFixed(1) + ',' + cy.toFixed(1));
+    } else if (rightCur > leftN + 0.5) {
+      // Overlap — find bottom intersection
+      var distB = nextC.cx - curC.cx;
+      if (distB > 0) {
+        var aB = (rCur * rCur - rNext * rNext + distB * distB) / (2 * distB);
+        var hSqB = rCur * rCur - aB * aB;
+        if (hSqB > 0) {
+          var hB = Math.sqrt(hSqB);
+          var ixB = curC.cx + aB;
+          var iyB = cy + hB; // bottom intersection
+          // Arc from left of next to intersection
+          parts.push('A ' + rNext.toFixed(1) + ',' + rNext.toFixed(1) + ' 0 0,1 ' + ixB.toFixed(1) + ',' + iyB.toFixed(1));
+          parts.push('A ' + rCur.toFixed(1) + ',' + rCur.toFixed(1) + ' 0 0,1 ' + (curC.cx - rCur).toFixed(1) + ',' + cy.toFixed(1));
+          continue;
+        }
+      }
+      parts.push('L ' + rightCur.toFixed(1) + ',' + cy.toFixed(1));
+    } else {
+      parts.push('L ' + rightCur.toFixed(1) + ',' + cy.toFixed(1));
+    }
+
+    // Arc under current circle
+    parts.push('A ' + rCur.toFixed(1) + ',' + rCur.toFixed(1) + ' 0 0,1 ' + (curC.cx - rCur).toFixed(1) + ',' + cy.toFixed(1));
+  }
+
+  parts.push('Z');
+  return parts.join(' ');
+}
+
+function calcTotalWidth() {
+  var w = ENCAP_W; // start with encapsulation margin
+  for (var i = 0; i < assembledElements.length; i++) {
+    var d = getDims(assembledElements[i].compId, assembledElements[i].spec);
+    w += d.w;
+  }
+  return w;
+}
+
+function calcMaxHeight() {
+  var h = 0;
+  for (var i = 0; i < assembledElements.length; i++) {
+    var d = getDims(assembledElements[i].compId, assembledElements[i].spec);
+    if (d.h > h) h = d.h;
+  }
+  return h + ENCAP_H;
+}
+
+function updateStats() {
+  var count = assembledElements.length;
+  document.getElementById('el-count').textContent = count;
+
+  if (count === 0) {
+    document.getElementById('dim-display').textContent = 'Width: 0.000" x Height: 0.000"';
+    document.getElementById('width-warn').innerHTML = '';
+    document.getElementById('bar-text').textContent = '0.000" / ' + MAX_WIDTH.toFixed(3) + '" max';
+    document.getElementById('width-bar').style.width = '0%';
+    document.getElementById('width-bar').className = 'width-bar-fill ok';
+    return;
+  }
+
+  var totalW = calcTotalWidth();
+  var maxH = calcMaxHeight();
+  var pct = Math.min((totalW / MAX_WIDTH) * 100, 100);
+  var remaining = MAX_WIDTH - totalW;
+
+  document.getElementById('dim-display').textContent =
+    totalW.toFixed(3) + '" Width (' + MAX_WIDTH.toFixed(3) + '" max.) x ' + maxH.toFixed(3) + '" Height';
+
+  var bar = document.getElementById('width-bar');
+  bar.style.width = pct + '%';
+  bar.textContent = totalW.toFixed(3) + '"';
+
+  if (totalW > MAX_WIDTH) {
+    bar.className = 'width-bar-fill over';
+    document.getElementById('width-warn').innerHTML =
+      '<span class="warn">WIDTH EXCEEDS ' + MAX_WIDTH.toFixed(3) + '". Delete element(s) to continue.</span>';
+  } else if (pct > 85) {
+    bar.className = 'width-bar-fill warn';
+    document.getElementById('width-warn').innerHTML =
+      '<span class="ok">Remaining: ' + remaining.toFixed(3) + '"</span>';
+  } else {
+    bar.className = 'width-bar-fill ok';
+    document.getElementById('width-warn').innerHTML =
+      '<span class="ok">Remaining: ' + remaining.toFixed(3) + '"</span>';
+  }
+
+  document.getElementById('bar-text').textContent =
+    totalW.toFixed(3) + '" / ' + MAX_WIDTH.toFixed(3) + '" max';
+}
+
+// ══════════════════════════════════════════════════
+// BUILD UI PANELS (using DOM, no innerHTML onclick)
+// ══════════════════════════════════════════════════
+function buildPanels() {
+  var cats = ['power', 'video', 'tubing'];
+  for (var ci = 0; ci < cats.length; ci++) {
+    var cat = cats[ci];
+    var container = document.getElementById(cat + '-cards');
+    var comps = COMPONENTS[cat];
+
+    for (var i = 0; i < comps.length; i++) {
+      var comp = comps[i];
+      var card = document.createElement('div');
+      card.className = 'component-card';
+
+      // Top row: SVG + name
+      var top = document.createElement('div');
+      top.className = 'card-top';
+      var svgDiv = document.createElement('div');
+      svgDiv.innerHTML = svgCross(comp.type, comp.color, 44);
+      top.appendChild(svgDiv.firstChild);
+
+      var nameDiv = document.createElement('div');
+      var nameSpan = document.createElement('div');
+      nameSpan.className = 'card-name';
+      nameSpan.textContent = comp.name;
+      nameDiv.appendChild(nameSpan);
+      top.appendChild(nameDiv);
+
+      card.appendChild(top);
+
+      // Button row
+      var btnRow = document.createElement('div');
+      btnRow.className = 'btn-row';
+
+      var lbl = document.createElement('label');
+      lbl.textContent = comp.specLabel;
+      btnRow.appendChild(lbl);
+
+      for (var j = 0; j < comp.specs.length; j++) {
+        var spec = comp.specs[j];
+        var btn = document.createElement('button');
+        btn.className = 'spec-btn';
+        btn.textContent = spec;
+        btn.setAttribute('data-comp-id', comp.id);
+        btn.setAttribute('data-spec', spec);
+        btn.setAttribute('data-cat', cat);
+        btn.addEventListener('click', function() {
+          var cid = this.getAttribute('data-comp-id');
+          var sp = this.getAttribute('data-spec');
+          var ct = this.getAttribute('data-cat');
+          // Convert numeric specs back to numbers
+          if (!isNaN(sp)) sp = Number(sp);
+          this.classList.add('flash');
+          var self = this;
+          setTimeout(function() { self.classList.remove('flash'); }, 200);
+          addElement(cid, sp, ct);
+        });
+        btnRow.appendChild(btn);
+      }
+
+      card.appendChild(btnRow);
+      container.appendChild(card);
+    }
+  }
+
+  // Modules
+  var modContainer = document.getElementById('module-cards');
+  for (var mi = 0; mi < MODULES.length; mi++) {
+    var mod = MODULES[mi];
+    var mCard = document.createElement('div');
+    mCard.className = 'component-card';
+
+    var mBtn = document.createElement('button');
+    mBtn.className = 'module-btn';
+    mBtn.setAttribute('data-module-id', mod.id);
+    mBtn.addEventListener('click', function() {
+      addModule(this.getAttribute('data-module-id'));
+    });
+
+    var plus = document.createElement('span');
+    plus.className = 'plus';
+    plus.textContent = '+';
+    mBtn.appendChild(plus);
+
+    var mInfo = document.createElement('div');
+    var mName = document.createElement('div');
+    mName.textContent = mod.name;
+    mInfo.appendChild(mName);
+
+    var mContents = document.createElement('div');
+    mContents.className = 'module-contents';
+    mContents.textContent = mod.contents;
+    mInfo.appendChild(mContents);
+
+    mBtn.appendChild(mInfo);
+    mCard.appendChild(mBtn);
+    modContainer.appendChild(mCard);
+  }
+}
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
+document.getElementById('clear-btn').addEventListener('click', clearAll);
+buildPanels();
+render();
+</script>
+</body>
+</html>
