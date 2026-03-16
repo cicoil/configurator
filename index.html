@@ -962,8 +962,8 @@ function renderStrip() {
   // Fixed scale: based on absolute largest possible element (3/8" tubing = 0.375")
   // so sizes never change when adding/removing elements
   var LARGEST_POSSIBLE = 0.375; // 3/8" tubing OD
-  var maxPx = 64;
-  var minPx = 12;
+  var maxPx = 96;   // 50% wider than before
+  var minPx = 18;
 
   var currentGroupId = null;
   var groupWrapper = null;
@@ -1071,7 +1071,7 @@ function renderCablePreview() {
   }
 
   // Scale: 1 inch = 200 pixels
-  var SCALE = 200;
+  var SCALE = 120; // 40% narrower preview
   // Flexx-Sil jacket: ~0.015" outer skin, fills all gaps between elements
   var jacketSkin = 0.015 * SCALE;
 
