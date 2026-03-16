@@ -80,6 +80,8 @@
     cursor: grab;
     position: relative;
     flex-shrink: 0;
+    touch-action: none;
+    user-select: none;
   }
 
   .strip-item:active { cursor: grabbing; }
@@ -114,9 +116,25 @@
     text-overflow: ellipsis;
   }
 
-  .dragging { opacity: 0.4; }
-  .drag-over-left { border-left: 3px solid var(--blue); }
-  .drag-over-right { border-right: 3px solid var(--blue); }
+  .strip-item { transition: transform 0.25s ease; }
+  .strip-item.dragging {
+    opacity: 0.85;
+    z-index: 100;
+    transform: scale(1.12);
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
+    pointer-events: none;
+    position: relative;
+  }
+  .strip-item.shift-right { transform: translateX(var(--shift-gap, 20px)); }
+  .strip-item.shift-left { transform: translateX(calc(-1 * var(--shift-gap, 20px))); }
+  .strip-group { transition: transform 0.25s ease; }
+  .strip-group.shift-right { transform: translateX(var(--shift-gap, 20px)); }
+  .strip-group.shift-left { transform: translateX(calc(-1 * var(--shift-gap, 20px))); }
+  .drop-ghost {
+    width: var(--ghost-w, 20px);
+    transition: width 0.2s ease;
+    flex-shrink: 0;
+  }
 
   .strip-group {
     display: flex;
@@ -887,53 +905,159 @@ function addModule(moduleId) {
 // ══════════════════════════════════════════════════
 // DRAG & DROP REORDER
 // ══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════
+// ANIMATED DRAG & DROP (pointer-based)
+// ══════════════════════════════════════════════════
+var dragState = null; // { uid, node, startX, startY, offsetX, offsetY, origIdx, currentInsertIdx, itemWidth }
+
 function setupDrag(node, uid) {
-  node.setAttribute('draggable', 'true');
-  node.addEventListener('dragstart', function(e) {
-    dragSrcUid = uid;
-    e.dataTransfer.effectAllowed = 'move';
-    node.classList.add('dragging');
-  });
-  node.addEventListener('dragend', function() {
-    node.classList.remove('dragging');
-    var overs = document.querySelectorAll('.drag-over-left,.drag-over-right');
-    for (var i = 0; i < overs.length; i++) {
-      overs[i].classList.remove('drag-over-left','drag-over-right');
-    }
-    dragSrcUid = null;
-  });
-  node.addEventListener('dragover', function(e) {
+  node.addEventListener('pointerdown', function(e) {
+    // Don't drag if clicking remove button
+    if (e.target.classList.contains('remove-btn')) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+
     var rect = node.getBoundingClientRect();
-    var mid = rect.left + rect.width / 2;
-    node.classList.toggle('drag-over-left', e.clientX < mid);
-    node.classList.toggle('drag-over-right', e.clientX >= mid);
-  });
-  node.addEventListener('dragleave', function() {
-    node.classList.remove('drag-over-left','drag-over-right');
-  });
-  node.addEventListener('drop', function(e) {
-    e.preventDefault();
-    node.classList.remove('drag-over-left','drag-over-right');
-    if (dragSrcUid === null || dragSrcUid === uid) return;
-    var srcIdx = -1, tgtIdx = -1;
+    var idx = -1;
     for (var i = 0; i < assembledElements.length; i++) {
-      if (assembledElements[i].uid === dragSrcUid) srcIdx = i;
-      if (assembledElements[i].uid === uid) tgtIdx = i;
+      if (assembledElements[i].uid === uid) { idx = i; break; }
     }
-    if (srcIdx === -1 || tgtIdx === -1) return;
-    var rect = node.getBoundingClientRect();
-    var insertAfter = e.clientX >= rect.left + rect.width / 2;
-    var moved = assembledElements.splice(srcIdx, 1)[0];
-    tgtIdx = -1;
-    for (var j = 0; j < assembledElements.length; j++) {
-      if (assembledElements[j].uid === uid) { tgtIdx = j; break; }
-    }
-    var insertIdx = insertAfter ? tgtIdx + 1 : tgtIdx;
-    assembledElements.splice(insertIdx, 0, moved);
-    render();
+    if (idx === -1) return;
+
+    dragState = {
+      uid: uid,
+      node: node,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      origIdx: idx,
+      currentInsertIdx: idx,
+      itemWidth: rect.width
+    };
+
+    node.classList.add('dragging');
+    node.style.position = 'relative';
+    node.style.zIndex = '100';
+    node.setPointerCapture(e.pointerId);
   });
+
+  node.addEventListener('pointermove', function(e) {
+    if (!dragState || dragState.uid !== uid) return;
+    e.preventDefault();
+
+    // Move the dragged element
+    var dx = e.clientX - dragState.startX;
+    dragState.node.style.transform = 'translateX(' + dx + 'px) scale(1.08)';
+
+    // Determine insert position based on cursor X vs sibling midpoints
+    var strip = document.getElementById('assembly-strip');
+    var items = strip.querySelectorAll('.strip-item, .strip-group');
+    var newIdx = assembledElements.length; // default: end
+
+    for (var i = 0; i < items.length; i++) {
+      var el = items[i];
+      if (el === dragState.node) continue;
+      var r = el.getBoundingClientRect();
+      var mid = r.left + r.width / 2;
+      if (e.clientX < mid) {
+        // Find which data index this DOM element corresponds to
+        var itemUid = parseInt(el.getAttribute('data-uid') || el.getAttribute('data-group-uid') || '0');
+        for (var j = 0; j < assembledElements.length; j++) {
+          if (assembledElements[j].uid === itemUid) { newIdx = j; break; }
+        }
+        break;
+      }
+    }
+
+    // If dragging past all items, insert at end
+    if (newIdx > dragState.origIdx) newIdx = Math.min(newIdx, assembledElements.length - 1);
+
+    if (newIdx !== dragState.currentInsertIdx) {
+      dragState.currentInsertIdx = newIdx;
+      // Animate siblings: shift items to open a gap
+      updateShifts(items, dragState.origIdx, newIdx, dragState.uid, dragState.itemWidth);
+    }
+  });
+
+  node.addEventListener('pointerup', function(e) {
+    if (!dragState || dragState.uid !== uid) return;
+    finishDrag();
+  });
+
+  node.addEventListener('pointercancel', function() {
+    if (!dragState || dragState.uid !== uid) return;
+    cancelDrag();
+  });
+}
+
+function updateShifts(items, origIdx, insertIdx, dragUid, gapWidth) {
+  // For each sibling, determine if it needs to shift to make room
+  for (var i = 0; i < items.length; i++) {
+    var el = items[i];
+    var elUid = parseInt(el.getAttribute('data-uid') || el.getAttribute('data-group-uid') || '0');
+    if (elUid === dragUid) continue;
+
+    // Find this element's data index
+    var dataIdx = -1;
+    for (var j = 0; j < assembledElements.length; j++) {
+      if (assembledElements[j].uid === elUid) { dataIdx = j; break; }
+    }
+    if (dataIdx === -1) continue;
+
+    el.classList.remove('shift-left', 'shift-right');
+    el.style.setProperty('--shift-gap', (gapWidth + 4) + 'px');
+
+    if (origIdx < insertIdx) {
+      // Dragging right: items between orig+1..insert shift left
+      if (dataIdx > origIdx && dataIdx <= insertIdx) {
+        el.classList.add('shift-left');
+      }
+    } else if (origIdx > insertIdx) {
+      // Dragging left: items between insert..orig-1 shift right
+      if (dataIdx >= insertIdx && dataIdx < origIdx) {
+        el.classList.add('shift-right');
+      }
+    }
+  }
+}
+
+function finishDrag() {
+  if (!dragState) return;
+
+  var origIdx = dragState.origIdx;
+  var insertIdx = dragState.currentInsertIdx;
+
+  // Clean up visual state
+  cleanupDragVisuals();
+
+  // Reorder data
+  if (origIdx !== insertIdx) {
+    var moved = assembledElements.splice(origIdx, 1)[0];
+    assembledElements.splice(insertIdx, 0, moved);
+  }
+
+  dragState = null;
+  render();
+}
+
+function cancelDrag() {
+  cleanupDragVisuals();
+  dragState = null;
+}
+
+function cleanupDragVisuals() {
+  if (!dragState) return;
+  dragState.node.classList.remove('dragging');
+  dragState.node.style.transform = '';
+  dragState.node.style.position = '';
+  dragState.node.style.zIndex = '';
+
+  var strip = document.getElementById('assembly-strip');
+  var items = strip.querySelectorAll('.strip-item, .strip-group');
+  for (var i = 0; i < items.length; i++) {
+    items[i].classList.remove('shift-left', 'shift-right');
+    items[i].style.transform = '';
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -978,6 +1102,7 @@ function renderStrip() {
     if (el.groupId && el.groupId !== currentGroupId) {
       groupWrapper = document.createElement('div');
       groupWrapper.className = 'strip-group';
+      groupWrapper.setAttribute('data-group-uid', el.uid);
 
       // Single remove button for the whole group
       var groupRemove = document.createElement('button');
@@ -1008,6 +1133,7 @@ function renderStrip() {
 
     var div = document.createElement('div');
     div.className = 'strip-item';
+    div.setAttribute('data-uid', el.uid);
 
     // Only show individual remove for non-group elements
     if (!el.groupId) {
