@@ -116,24 +116,11 @@
     text-overflow: ellipsis;
   }
 
-  .strip-item { transition: transform 0.25s ease; }
   .strip-item.dragging {
     opacity: 0.85;
     z-index: 100;
-    transform: scale(1.12);
-    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
-    pointer-events: none;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
     position: relative;
-  }
-  .strip-item.shift-right { transform: translateX(var(--shift-gap, 20px)); }
-  .strip-item.shift-left { transform: translateX(calc(-1 * var(--shift-gap, 20px))); }
-  .strip-group { transition: transform 0.25s ease; }
-  .strip-group.shift-right { transform: translateX(var(--shift-gap, 20px)); }
-  .strip-group.shift-left { transform: translateX(calc(-1 * var(--shift-gap, 20px))); }
-  .drop-ghost {
-    width: var(--ghost-w, 20px);
-    transition: width 0.2s ease;
-    flex-shrink: 0;
   }
 
   .strip-group {
@@ -903,41 +890,58 @@ function addModule(moduleId) {
 }
 
 // ══════════════════════════════════════════════════
-// DRAG & DROP REORDER
-// ══════════════════════════════════════════════════
-// ══════════════════════════════════════════════════
 // ANIMATED DRAG & DROP (pointer-based)
+// Snapshots original positions on drag start so
+// shifted transforms don't corrupt hit detection.
 // ══════════════════════════════════════════════════
-var dragState = null; // { uid, node, startX, startY, offsetX, offsetY, origIdx, currentInsertIdx, itemWidth }
+var dragState = null;
 
 function setupDrag(node, uid) {
   node.addEventListener('pointerdown', function(e) {
-    // Don't drag if clicking remove button
     if (e.target.classList.contains('remove-btn')) return;
     e.preventDefault();
 
-    var rect = node.getBoundingClientRect();
     var idx = -1;
     for (var i = 0; i < assembledElements.length; i++) {
       if (assembledElements[i].uid === uid) { idx = i; break; }
     }
     if (idx === -1) return;
 
+    // Snapshot ALL sibling rects BEFORE any transforms
+    var strip = document.getElementById('assembly-strip');
+    var allItems = strip.querySelectorAll('.strip-item');
+    var slots = []; // { uid, dataIdx, left, right, midX, width, node }
+    for (var s = 0; s < allItems.length; s++) {
+      var sNode = allItems[s];
+      var sUid = parseInt(sNode.getAttribute('data-uid') || '0');
+      var sIdx = -1;
+      for (var si = 0; si < assembledElements.length; si++) {
+        if (assembledElements[si].uid === sUid) { sIdx = si; break; }
+      }
+      var sRect = sNode.getBoundingClientRect();
+      slots.push({
+        uid: sUid,
+        dataIdx: sIdx,
+        left: sRect.left,
+        right: sRect.right,
+        midX: sRect.left + sRect.width / 2,
+        width: sRect.width,
+        node: sNode
+      });
+    }
+
+    var myRect = node.getBoundingClientRect();
     dragState = {
       uid: uid,
       node: node,
       startX: e.clientX,
-      startY: e.clientY,
-      offsetX: e.clientX - rect.left,
-      offsetY: e.clientY - rect.top,
       origIdx: idx,
       currentInsertIdx: idx,
-      itemWidth: rect.width
+      dragWidth: myRect.width,
+      slots: slots // frozen positions
     };
 
     node.classList.add('dragging');
-    node.style.position = 'relative';
-    node.style.zIndex = '100';
     node.setPointerCapture(e.pointerId);
   });
 
@@ -945,37 +949,44 @@ function setupDrag(node, uid) {
     if (!dragState || dragState.uid !== uid) return;
     e.preventDefault();
 
-    // Move the dragged element
     var dx = e.clientX - dragState.startX;
     dragState.node.style.transform = 'translateX(' + dx + 'px) scale(1.08)';
 
-    // Determine insert position based on cursor X vs sibling midpoints
-    var strip = document.getElementById('assembly-strip');
-    var items = strip.querySelectorAll('.strip-item, .strip-group');
-    var newIdx = assembledElements.length; // default: end
+    // Use frozen slot midpoints for hit detection
+    var newIdx = dragState.origIdx;
+    var cursorX = e.clientX;
+    var slots = dragState.slots;
+    var origIdx = dragState.origIdx;
 
-    for (var i = 0; i < items.length; i++) {
-      var el = items[i];
-      if (el === dragState.node) continue;
-      var r = el.getBoundingClientRect();
-      var mid = r.left + r.width / 2;
-      if (e.clientX < mid) {
-        // Find which data index this DOM element corresponds to
-        var itemUid = parseInt(el.getAttribute('data-uid') || el.getAttribute('data-group-uid') || '0');
-        for (var j = 0; j < assembledElements.length; j++) {
-          if (assembledElements[j].uid === itemUid) { newIdx = j; break; }
+    // Walk through slots (excluding the dragged one) and find insert point
+    var otherSlots = [];
+    for (var i = 0; i < slots.length; i++) {
+      if (slots[i].uid !== dragState.uid) {
+        otherSlots.push(slots[i]);
+      }
+    }
+
+    // Default: place at end
+    newIdx = assembledElements.length - 1;
+
+    for (var j = 0; j < otherSlots.length; j++) {
+      if (cursorX < otherSlots[j].midX) {
+        newIdx = otherSlots[j].dataIdx;
+        // Adjust: if dragged item was before this slot, the target shifts down by 1
+        if (origIdx < otherSlots[j].dataIdx) {
+          newIdx = otherSlots[j].dataIdx - 1;
         }
         break;
       }
     }
 
-    // If dragging past all items, insert at end
-    if (newIdx > dragState.origIdx) newIdx = Math.min(newIdx, assembledElements.length - 1);
+    // Clamp
+    if (newIdx < 0) newIdx = 0;
+    if (newIdx >= assembledElements.length) newIdx = assembledElements.length - 1;
 
     if (newIdx !== dragState.currentInsertIdx) {
       dragState.currentInsertIdx = newIdx;
-      // Animate siblings: shift items to open a gap
-      updateShifts(items, dragState.origIdx, newIdx, dragState.uid, dragState.itemWidth);
+      applyShifts();
     }
   });
 
@@ -990,32 +1001,31 @@ function setupDrag(node, uid) {
   });
 }
 
-function updateShifts(items, origIdx, insertIdx, dragUid, gapWidth) {
-  // For each sibling, determine if it needs to shift to make room
-  for (var i = 0; i < items.length; i++) {
-    var el = items[i];
-    var elUid = parseInt(el.getAttribute('data-uid') || el.getAttribute('data-group-uid') || '0');
-    if (elUid === dragUid) continue;
+function applyShifts() {
+  if (!dragState) return;
+  var origIdx = dragState.origIdx;
+  var insertIdx = dragState.currentInsertIdx;
+  var slots = dragState.slots;
+  var gapPx = dragState.dragWidth;
 
-    // Find this element's data index
-    var dataIdx = -1;
-    for (var j = 0; j < assembledElements.length; j++) {
-      if (assembledElements[j].uid === elUid) { dataIdx = j; break; }
-    }
-    if (dataIdx === -1) continue;
+  for (var i = 0; i < slots.length; i++) {
+    var sl = slots[i];
+    if (sl.uid === dragState.uid) continue;
+    var di = sl.dataIdx;
 
-    el.classList.remove('shift-left', 'shift-right');
-    el.style.setProperty('--shift-gap', (gapWidth + 4) + 'px');
+    // Reset
+    sl.node.style.transition = 'transform 0.2s ease';
+    sl.node.style.transform = '';
 
     if (origIdx < insertIdx) {
-      // Dragging right: items between orig+1..insert shift left
-      if (dataIdx > origIdx && dataIdx <= insertIdx) {
-        el.classList.add('shift-left');
+      // Dragged right: items orig+1..insertIdx shift left by gap
+      if (di > origIdx && di <= insertIdx) {
+        sl.node.style.transform = 'translateX(' + (-gapPx) + 'px)';
       }
     } else if (origIdx > insertIdx) {
-      // Dragging left: items between insert..orig-1 shift right
-      if (dataIdx >= insertIdx && dataIdx < origIdx) {
-        el.classList.add('shift-right');
+      // Dragged left: items insertIdx..orig-1 shift right by gap
+      if (di >= insertIdx && di < origIdx) {
+        sl.node.style.transform = 'translateX(' + gapPx + 'px)';
       }
     }
   }
@@ -1023,14 +1033,11 @@ function updateShifts(items, origIdx, insertIdx, dragUid, gapWidth) {
 
 function finishDrag() {
   if (!dragState) return;
-
   var origIdx = dragState.origIdx;
   var insertIdx = dragState.currentInsertIdx;
 
-  // Clean up visual state
   cleanupDragVisuals();
 
-  // Reorder data
   if (origIdx !== insertIdx) {
     var moved = assembledElements.splice(origIdx, 1)[0];
     assembledElements.splice(insertIdx, 0, moved);
@@ -1049,14 +1056,10 @@ function cleanupDragVisuals() {
   if (!dragState) return;
   dragState.node.classList.remove('dragging');
   dragState.node.style.transform = '';
-  dragState.node.style.position = '';
-  dragState.node.style.zIndex = '';
 
-  var strip = document.getElementById('assembly-strip');
-  var items = strip.querySelectorAll('.strip-item, .strip-group');
-  for (var i = 0; i < items.length; i++) {
-    items[i].classList.remove('shift-left', 'shift-right');
-    items[i].style.transform = '';
+  for (var i = 0; i < dragState.slots.length; i++) {
+    dragState.slots[i].node.style.transform = '';
+    dragState.slots[i].node.style.transition = '';
   }
 }
 
